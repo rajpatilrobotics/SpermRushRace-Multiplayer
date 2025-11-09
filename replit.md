@@ -6,13 +6,17 @@ Gene Pool Royale is a humorous multiplayer racing game where players control spe
 
 ## Recent Changes
 
-**November 9, 2025 - Sperm Visual Improvements**
+**November 9, 2025 - Sperm Visual & Camera Improvements**
 - Fixed sperm orientation: tails now trail downward behind characters as they swim upward
 - Redesigned head shape: changed from simple ellipse to realistic teardrop/tadpole shape with pointed front
 - Enhanced tail rendering: implemented flowing, tapering tail with smooth wave motion using 20 segments
 - Added visual depth: gradients, multi-layer glow effects, and improved proportions
 - Improved multiplayer nickname rendering: added stroke outline for better visibility
-- Performance: Optimized rendering remains performant with per-segment gradients
+- Fixed camera positioning: player now appears at 45% down screen (instead of centered) with full sperm body visible
+- Implemented mutable local camera variable for same-frame rendering without delays
+- Camera initialization works across all game phases (ready, racing, finished)
+- Allows negative camera values (-50% canvas height) for proper initial positioning
+- Performance: Optimized rendering remains performant with per-segment gradients and per-frame camera updates
 
 ## User Preferences
 
