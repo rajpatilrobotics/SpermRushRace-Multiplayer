@@ -16,6 +16,30 @@ export interface Obstacle {
   x: number;
   y: number;
   active: boolean;
+  isChasing?: boolean;
+  velocityX?: number;
+  velocityY?: number;
+}
+
+export interface MysteryEgg {
+  id: string;
+  x: number;
+  y: number;
+  active: boolean;
+  contents: "powerup" | "obstacle";
+  contentType: string;
+}
+
+export interface Particle {
+  id: string;
+  x: number;
+  y: number;
+  velocityX: number;
+  velocityY: number;
+  life: number;
+  maxLife: number;
+  color: string;
+  size: number;
 }
 
 export interface Racer {
@@ -48,6 +72,8 @@ interface RaceState {
   racers: Racer[];
   powerUps: PowerUp[];
   obstacles: Obstacle[];
+  mysteryEggs: MysteryEgg[];
+  particles: Particle[];
   trackHeight: number;
   cameraY: number;
   activeEffects: ActiveEffect[];
@@ -55,6 +81,8 @@ interface RaceState {
   voiceBoostActive: boolean;
   voiceBoostCooldown: number;
   droppedCondoms: Obstacle[];
+  screenShake: number;
+  lastEventMessage: string;
   
   // Actions
   startRace: () => void;
@@ -63,6 +91,7 @@ interface RaceState {
   updateRacer: (id: string, updates: Partial<Racer>) => void;
   collectPowerUp: (racerId: string, powerUpId: string) => void;
   hitObstacle: (racerId: string, obstacleId: string) => void;
+  collectMysteryEgg: (racerId: string, eggId: string) => void;
   updateCamera: (y: number) => void;
   addActiveEffect: (effect: Omit<ActiveEffect, 'id'>) => void;
   activateVoiceBoost: () => void;
@@ -70,6 +99,10 @@ interface RaceState {
   checkCollisions: () => void;
   dropCondom: () => void;
   checkSlipstreams: () => void;
+  addParticles: (x: number, y: number, color: string, count: number) => void;
+  updateParticles: (delta: number) => void;
+  updateSmartObstacles: () => void;
+  setEventMessage: (message: string) => void;
 }
 
 const TRACK_HEIGHT = 40 * window.innerHeight;
@@ -94,23 +127,53 @@ const generatePowerUps = (): PowerUp[] => {
   return powerUps;
 };
 
-// Generate obstacles along the track
+// Generate obstacles along the track (some with chasing behavior!)
 const generateObstacles = (): Obstacle[] => {
   const obstacles: Obstacle[] = [];
   const types: Obstacle["type"][] = ["condom", "pill", "antibody", "std"];
   
   for (let i = 800; i < TRACK_HEIGHT; i += 600) {
     const type = types[Math.floor(Math.random() * types.length)];
+    const shouldChase = Math.random() < 0.3 && (type === "std" || type === "pill" || type === "condom");
+    
     obstacles.push({
       id: `obstacle-${i}`,
       type,
       x: Math.random() * (CANVAS_WIDTH - 200) + 100,
       y: i,
       active: true,
+      isChasing: shouldChase,
+      velocityX: 0,
+      velocityY: 0,
     });
   }
   
   return obstacles;
+};
+
+// Generate mystery eggs along the track
+const generateMysteryEggs = (): MysteryEgg[] => {
+  const eggs: MysteryEgg[] = [];
+  const powerUpTypes = ["lube", "mutation", "viagra"];
+  const obstacleTypes = ["condom", "pill", "antibody", "std"];
+  
+  for (let i = 1200; i < TRACK_HEIGHT; i += 800) {
+    const contents = Math.random() < 0.6 ? "powerup" : "obstacle";
+    const contentType = contents === "powerup" 
+      ? powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)]
+      : obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
+    
+    eggs.push({
+      id: `egg-${i}`,
+      x: Math.random() * (CANVAS_WIDTH - 200) + 100,
+      y: i,
+      active: true,
+      contents,
+      contentType,
+    });
+  }
+  
+  return eggs;
 };
 
 export const useRace = create<RaceState>((set, get) => ({
@@ -167,6 +230,8 @@ export const useRace = create<RaceState>((set, get) => ({
   ],
   powerUps: generatePowerUps(),
   obstacles: generateObstacles(),
+  mysteryEggs: generateMysteryEggs(),
+  particles: [],
   trackHeight: TRACK_HEIGHT,
   cameraY: 0,
   activeEffects: [],
@@ -174,6 +239,8 @@ export const useRace = create<RaceState>((set, get) => ({
   voiceBoostActive: false,
   voiceBoostCooldown: 0,
   droppedCondoms: [],
+  screenShake: 0,
+  lastEventMessage: "",
   
   startRace: () => set({ phase: "racing" }),
   
@@ -232,12 +299,16 @@ export const useRace = create<RaceState>((set, get) => ({
       ],
       powerUps: generatePowerUps(),
       obstacles: generateObstacles(),
+      mysteryEggs: generateMysteryEggs(),
+      particles: [],
       cameraY: 0,
       activeEffects: [],
       lastCommentaryTime: 0,
       voiceBoostActive: false,
       voiceBoostCooldown: 0,
       droppedCondoms: [],
+      screenShake: 0,
+      lastEventMessage: "",
     });
   },
   
@@ -336,6 +407,86 @@ export const useRace = create<RaceState>((set, get) => ({
     get().addActiveEffect({ type: obstacle.type, message, duration: slowdownDuration, timer: slowdownDuration });
   },
   
+  collectMysteryEgg: (racerId, eggId) => {
+    const state = get();
+    const egg = state.mysteryEggs.find((e) => e.id === eggId);
+    if (!egg || !egg.active) return;
+    
+    // Deactivate egg
+    set({
+      mysteryEggs: state.mysteryEggs.map((e) =>
+        e.id === eggId ? { ...e, active: false } : e
+      ),
+    });
+    
+    const racer = state.racers.find((r) => r.id === racerId);
+    if (!racer) return;
+    
+    // Create particle explosion with gold particles
+    get().addParticles(egg.x, egg.y, "#FFD700", 15);
+    
+    const playerName = (racer as any).nickname || racer.name;
+    let message = "";
+    
+    // Apply contents
+    if (egg.contents === "powerup") {
+      let multiplier = 1;
+      
+      switch (egg.contentType) {
+        case "lube":
+          multiplier = 1.5;
+          message = `✨ ${playerName} got Mystery Lube!`;
+          break;
+        case "mutation":
+          multiplier = 1.3;
+          message = `✨ ${playerName} got Mystery Mutation!`;
+          break;
+        case "viagra":
+          multiplier = 1.7;
+          message = `✨ ${playerName} got Mystery Viagra!`;
+          break;
+      }
+      
+      get().updateRacer(racerId, { 
+        speedMultiplier: multiplier,
+        activePowerUpType: egg.contentType,
+        powerUpTimer: 3000,
+      });
+      get().addActiveEffect({ type: egg.contentType, message, duration: 3000, timer: 3000 });
+    } else {
+      // It's an obstacle
+      let slowdownDuration = 0;
+      
+      switch (egg.contentType) {
+        case "condom":
+          slowdownDuration = 2000;
+          message = `💥 ${playerName} got Mystery Condom!`;
+          break;
+        case "pill":
+          slowdownDuration = 1500;
+          message = `💥 ${playerName} got Mystery Pill!`;
+          break;
+        case "antibody":
+          slowdownDuration = 3000;
+          message = `💥 ${playerName} got Mystery Antibody!`;
+          break;
+        case "std":
+          slowdownDuration = 3000;
+          message = `💥 ${playerName} got Mystery STD!`;
+          break;
+      }
+      
+      get().updateRacer(racerId, { speedMultiplier: 0.5, slowdownTimer: slowdownDuration });
+      get().addActiveEffect({ type: egg.contentType, message, duration: slowdownDuration, timer: slowdownDuration });
+      
+      // Set screen shake for obstacle
+      set({ screenShake: 5 });
+    }
+    
+    // Set event message for commentary
+    get().setEventMessage(message);
+  },
+  
   updateCamera: (y) => set({ cameraY: y }),
   
   addActiveEffect: (effect) => {
@@ -370,6 +521,9 @@ export const useRace = create<RaceState>((set, get) => ({
   },
   
   updateTimers: (delta) => {
+    // Update particles
+    get().updateParticles(delta);
+    
     set((state) => {
       const newRacers = state.racers.map((racer) => {
         let updates: Partial<Racer> = {};
@@ -411,10 +565,14 @@ export const useRace = create<RaceState>((set, get) => ({
       
       const newVoiceBoostCooldown = Math.max(0, state.voiceBoostCooldown - delta);
       
+      // Decrease screen shake
+      const newScreenShake = Math.max(0, state.screenShake - delta * 0.02);
+      
       return {
         racers: newRacers,
         activeEffects: newActiveEffects,
         voiceBoostCooldown: newVoiceBoostCooldown,
+        screenShake: newScreenShake,
       };
     });
   },
@@ -442,6 +600,17 @@ export const useRace = create<RaceState>((set, get) => ({
         const distance = Math.sqrt(dx * dx + dy * dy);
         if (distance < 40) {
           get().hitObstacle(racer.id, obstacle.id);
+        }
+      });
+      
+      // Check mystery egg collisions
+      state.mysteryEggs.forEach((egg) => {
+        if (!egg.active) return;
+        const dx = racer.x - egg.x;
+        const dy = racer.y - egg.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < 45) {
+          get().collectMysteryEgg(racer.id, egg.id);
         }
       });
       
@@ -613,5 +782,90 @@ export const useRace = create<RaceState>((set, get) => ({
         }
       }
     });
+  },
+  
+  addParticles: (x, y, color, count) => {
+    const newParticles: Particle[] = [];
+    
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 3 + 2;
+      
+      newParticles.push({
+        id: `particle-${Date.now()}-${i}`,
+        x,
+        y,
+        velocityX: Math.cos(angle) * speed,
+        velocityY: Math.sin(angle) * speed,
+        life: 1000,
+        maxLife: 1000,
+        color,
+        size: Math.random() * 4 + 2,
+      });
+    }
+    
+    set((state) => ({
+      particles: [...state.particles, ...newParticles],
+    }));
+  },
+  
+  updateParticles: (delta) => {
+    set((state) => {
+      const updatedParticles = state.particles
+        .map((particle) => ({
+          ...particle,
+          x: particle.x + particle.velocityX,
+          y: particle.y + particle.velocityY,
+          velocityY: particle.velocityY + 0.1,
+          life: particle.life - delta,
+        }))
+        .filter((particle) => particle.life > 0);
+      
+      return {
+        particles: updatedParticles,
+      };
+    });
+  },
+  
+  updateSmartObstacles: () => {
+    const state = get();
+    const player = state.racers.find((r) => r.isPlayer);
+    if (!player) return;
+    
+    const updatedObstacles = state.obstacles.map((obstacle) => {
+      if (!obstacle.isChasing || !obstacle.active) return obstacle;
+      
+      const dx = player.x - obstacle.x;
+      const dy = player.y - obstacle.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance > 0) {
+        const dirX = dx / distance;
+        const dirY = dy / distance;
+        const speed = 2;
+        
+        let newX = obstacle.x + dirX * speed;
+        let newY = obstacle.y + dirY * speed;
+        
+        newX = Math.max(50, Math.min(CANVAS_WIDTH - 50, newX));
+        newY = Math.max(0, Math.min(TRACK_HEIGHT, newY));
+        
+        return {
+          ...obstacle,
+          x: newX,
+          y: newY,
+          velocityX: dirX * speed,
+          velocityY: dirY * speed,
+        };
+      }
+      
+      return obstacle;
+    });
+    
+    set({ obstacles: updatedObstacles });
+  },
+  
+  setEventMessage: (message) => {
+    set({ lastEventMessage: message });
   },
 }));

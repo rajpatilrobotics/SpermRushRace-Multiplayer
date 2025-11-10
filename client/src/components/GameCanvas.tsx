@@ -1,7 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { useRace } from "@/lib/stores/useRace";
 import { useMultiplayer } from "@/lib/stores/useMultiplayer";
-import type { Racer, PowerUp, Obstacle } from "@/lib/stores/useRace";
+import type { Racer, PowerUp, Obstacle, MysteryEgg, Particle } from "@/lib/stores/useRace";
+
+const IMAGE_CACHE: Record<string, HTMLImageElement> = {};
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  if (IMAGE_CACHE[src]) {
+    return Promise.resolve(IMAGE_CACHE[src]);
+  }
+  
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      IMAGE_CACHE[src] = img;
+      resolve(img);
+    };
+    img.onerror = reject;
+    img.src = src;
+  });
+}
 
 interface Keys {
   w: boolean;
@@ -17,14 +35,19 @@ interface Keys {
 
 export function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [imagesLoaded, setImagesLoaded] = useState(false);
+  
   const {
     phase,
     racers,
     powerUps,
     obstacles,
+    mysteryEggs,
+    particles,
     trackHeight,
     cameraY,
     droppedCondoms,
+    screenShake,
     updateRacer,
     updateCamera,
     updateTimers,
@@ -32,6 +55,7 @@ export function GameCanvas() {
     checkSlipstreams,
     dropCondom,
     finishRace,
+    updateSmartObstacles,
   } = useRace();
   
   const {
@@ -57,6 +81,26 @@ export function GameCanvas() {
   const lastShiftPressRef = useRef<number>(0);
   
   const lastTimeRef = useRef<number>(0);
+  
+  useEffect(() => {
+    const images = [
+      '/images/lube.png',
+      '/images/viagra.png',
+      '/images/mutation.png',
+      '/images/std.png',
+      '/images/birth-control.png',
+      '/images/condom.png',
+      '/images/antibody.png',
+      '/images/mystery-egg.png',
+    ];
+    
+    Promise.all(images.map(loadImage)).then(() => {
+      setImagesLoaded(true);
+    }).catch(err => {
+      console.error('Failed to load images:', err);
+      setImagesLoaded(true);
+    });
+  }, []);
   
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -236,6 +280,9 @@ export function GameCanvas() {
         
         // Check slipstreams
         state.checkSlipstreams();
+        
+        // Update smart obstacles
+        state.updateSmartObstacles();
       }
       
       // Sync camera back to store (after all updates, for all phases)
@@ -243,6 +290,12 @@ export function GameCanvas() {
       
       // Render
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Apply screen shake
+      ctx.save();
+      const shakeX = (Math.random() - 0.5) * state.screenShake * 2;
+      const shakeY = (Math.random() - 0.5) * state.screenShake * 2;
+      ctx.translate(shakeX, shakeY);
       
       // Background gradient
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -280,6 +333,21 @@ export function GameCanvas() {
         drawObstacle(ctx, obstacle, obstacle.x, screenY);
       });
       
+      // Render mystery eggs
+      mysteryEggs.forEach((egg) => {
+        if (!egg.active) return;
+        const screenY = canvas.height - (egg.y - currentCameraY);
+        if (screenY < -50 || screenY > canvas.height + 50) return;
+        
+        drawMysteryEgg(ctx, egg, egg.x, screenY);
+      });
+      
+      // Render particles
+      particles.forEach((particle) => {
+        const screenY = canvas.height - (particle.y - currentCameraY);
+        drawParticle(ctx, particle, particle.x, screenY);
+      });
+      
       // Render racers
       if (isMultiplayer) {
         // Render multiplayer players
@@ -305,6 +373,9 @@ export function GameCanvas() {
         ctx.fillText("🥚 FINISH 🥚", canvas.width / 2, finishScreenY);
       }
       
+      // Restore context after screen shake
+      ctx.restore();
+      
       animationFrameRef.current = requestAnimationFrame(animate);
     };
     
@@ -325,9 +396,11 @@ function drawSperm(ctx: CanvasRenderingContext2D, racer: Racer, x: number, y: nu
   ctx.save();
   ctx.translate(x, y);
   
+  const scale = 1.3;
+  
   // Tail (wavy, flowing behind) - drawn first so head overlaps it
-  const tailLength = 60;
-  const tailSegments = 20;
+  const tailLength = 78 * scale;
+  const tailSegments = 24;
   
   for (let i = 0; i < tailSegments; i++) {
     const progress = i / tailSegments;
@@ -335,17 +408,18 @@ function drawSperm(ctx: CanvasRenderingContext2D, racer: Racer, x: number, y: nu
     const nextProgress = (i + 1) / tailSegments;
     const nextYPos = nextProgress * tailLength;
     
-    // Wavy motion
-    const waveX = Math.sin(racer.tailPhase + progress * Math.PI * 2) * 6 * (1 - progress);
-    const nextWaveX = Math.sin(racer.tailPhase + nextProgress * Math.PI * 2) * 6 * (1 - nextProgress);
+    // Enhanced wavy motion
+    const waveX = Math.sin(racer.tailPhase + progress * Math.PI * 2) * 8 * scale * (1 - progress);
+    const nextWaveX = Math.sin(racer.tailPhase + nextProgress * Math.PI * 2) * 8 * scale * (1 - nextProgress);
     
     // Tapering width
-    const width = 3 * (1 - progress * 0.8);
+    const width = 4 * scale * (1 - progress * 0.75);
     
-    // Gradient for tail
+    // Enhanced gradient for tail
     const gradient = ctx.createLinearGradient(0, yPos, 0, nextYPos);
     gradient.addColorStop(0, racer.color);
-    gradient.addColorStop(1, racer.color + "AA");
+    gradient.addColorStop(0.5, racer.color + "CC");
+    gradient.addColorStop(1, racer.color + "99");
     
     ctx.strokeStyle = gradient;
     ctx.lineWidth = width;
@@ -356,34 +430,40 @@ function drawSperm(ctx: CanvasRenderingContext2D, racer: Racer, x: number, y: nu
     ctx.stroke();
   }
   
-  // Head - teardrop/tadpole shape pointing upward
+  // Head - larger teardrop/tadpole shape pointing upward
   ctx.fillStyle = racer.color;
   ctx.beginPath();
   
-  // Create teardrop shape
-  ctx.moveTo(0, -18); // Pointed tip at top
-  ctx.quadraticCurveTo(8, -10, 10, 0); // Right curve
-  ctx.quadraticCurveTo(8, 8, 0, 10); // Bottom right
-  ctx.quadraticCurveTo(-8, 8, -10, 0); // Bottom left
-  ctx.quadraticCurveTo(-8, -10, 0, -18); // Left curve back to top
+  // Create larger teardrop shape (30% bigger)
+  ctx.moveTo(0, -23 * scale); // Pointed tip at top
+  ctx.quadraticCurveTo(10 * scale, -13 * scale, 13 * scale, 0); // Right curve
+  ctx.quadraticCurveTo(10 * scale, 10 * scale, 0, 13 * scale); // Bottom right
+  ctx.quadraticCurveTo(-10 * scale, 10 * scale, -13 * scale, 0); // Bottom left
+  ctx.quadraticCurveTo(-10 * scale, -13 * scale, 0, -23 * scale); // Left curve back to top
   ctx.closePath();
   ctx.fill();
   
-  // Add gradient overlay for depth
-  const headGradient = ctx.createRadialGradient(-3, -8, 0, 0, 0, 15);
-  headGradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-  headGradient.addColorStop(1, 'rgba(0, 0, 0, 0.1)');
+  // Add enhanced gradient overlay for depth
+  const headGradient = ctx.createRadialGradient(-4 * scale, -10 * scale, 0, 0, 0, 20 * scale);
+  headGradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+  headGradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.1)');
+  headGradient.addColorStop(1, 'rgba(0, 0, 0, 0.15)');
   ctx.fillStyle = headGradient;
   ctx.fill();
   
-  // Glow effect around head
+  // Inner glow effect
+  ctx.strokeStyle = racer.color + "AA";
+  ctx.lineWidth = 2 * scale;
+  ctx.stroke();
+  
+  // Mid glow effect around head
   ctx.strokeStyle = racer.color + "66";
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 5 * scale;
   ctx.stroke();
   
   // Outer glow
   ctx.strokeStyle = racer.color + "33";
-  ctx.lineWidth = 7;
+  ctx.lineWidth = 9 * scale;
   ctx.stroke();
   
   ctx.restore();
@@ -393,9 +473,11 @@ function drawMultiplayerSperm(ctx: CanvasRenderingContext2D, player: any, x: num
   ctx.save();
   ctx.translate(x, y);
   
+  const scale = 1.3;
+  
   // Tail (wavy, flowing behind) - drawn first so head overlaps it
-  const tailLength = 60;
-  const tailSegments = 20;
+  const tailLength = 78 * scale;
+  const tailSegments = 24;
   
   for (let i = 0; i < tailSegments; i++) {
     const progress = i / tailSegments;
@@ -403,17 +485,18 @@ function drawMultiplayerSperm(ctx: CanvasRenderingContext2D, player: any, x: num
     const nextProgress = (i + 1) / tailSegments;
     const nextYPos = nextProgress * tailLength;
     
-    // Wavy motion
-    const waveX = Math.sin(player.tailPhase + progress * Math.PI * 2) * 6 * (1 - progress);
-    const nextWaveX = Math.sin(player.tailPhase + nextProgress * Math.PI * 2) * 6 * (1 - nextProgress);
+    // Enhanced wavy motion
+    const waveX = Math.sin(player.tailPhase + progress * Math.PI * 2) * 8 * scale * (1 - progress);
+    const nextWaveX = Math.sin(player.tailPhase + nextProgress * Math.PI * 2) * 8 * scale * (1 - nextProgress);
     
     // Tapering width
-    const width = 3 * (1 - progress * 0.8);
+    const width = 4 * scale * (1 - progress * 0.75);
     
-    // Gradient for tail
+    // Enhanced gradient for tail
     const gradient = ctx.createLinearGradient(0, yPos, 0, nextYPos);
     gradient.addColorStop(0, player.color);
-    gradient.addColorStop(1, player.color + "AA");
+    gradient.addColorStop(0.5, player.color + "CC");
+    gradient.addColorStop(1, player.color + "99");
     
     ctx.strokeStyle = gradient;
     ctx.lineWidth = width;
@@ -424,34 +507,40 @@ function drawMultiplayerSperm(ctx: CanvasRenderingContext2D, player: any, x: num
     ctx.stroke();
   }
   
-  // Head - teardrop/tadpole shape pointing upward
+  // Head - larger teardrop/tadpole shape pointing upward
   ctx.fillStyle = player.color;
   ctx.beginPath();
   
-  // Create teardrop shape
-  ctx.moveTo(0, -18); // Pointed tip at top
-  ctx.quadraticCurveTo(8, -10, 10, 0); // Right curve
-  ctx.quadraticCurveTo(8, 8, 0, 10); // Bottom right
-  ctx.quadraticCurveTo(-8, 8, -10, 0); // Bottom left
-  ctx.quadraticCurveTo(-8, -10, 0, -18); // Left curve back to top
+  // Create larger teardrop shape (30% bigger)
+  ctx.moveTo(0, -23 * scale); // Pointed tip at top
+  ctx.quadraticCurveTo(10 * scale, -13 * scale, 13 * scale, 0); // Right curve
+  ctx.quadraticCurveTo(10 * scale, 10 * scale, 0, 13 * scale); // Bottom right
+  ctx.quadraticCurveTo(-10 * scale, 10 * scale, -13 * scale, 0); // Bottom left
+  ctx.quadraticCurveTo(-10 * scale, -13 * scale, 0, -23 * scale); // Left curve back to top
   ctx.closePath();
   ctx.fill();
   
-  // Add gradient overlay for depth
-  const headGradient = ctx.createRadialGradient(-3, -8, 0, 0, 0, 15);
-  headGradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-  headGradient.addColorStop(1, 'rgba(0, 0, 0, 0.1)');
+  // Add enhanced gradient overlay for depth
+  const headGradient = ctx.createRadialGradient(-4 * scale, -10 * scale, 0, 0, 0, 20 * scale);
+  headGradient.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+  headGradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.1)');
+  headGradient.addColorStop(1, 'rgba(0, 0, 0, 0.15)');
   ctx.fillStyle = headGradient;
   ctx.fill();
   
-  // Glow effect around head
+  // Inner glow effect
+  ctx.strokeStyle = player.color + "AA";
+  ctx.lineWidth = 2 * scale;
+  ctx.stroke();
+  
+  // Mid glow effect around head
   ctx.strokeStyle = player.color + "66";
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 5 * scale;
   ctx.stroke();
   
   // Outer glow
   ctx.strokeStyle = player.color + "33";
-  ctx.lineWidth = 7;
+  ctx.lineWidth = 9 * scale;
   ctx.stroke();
   
   // Player nickname label
@@ -460,8 +549,8 @@ function drawMultiplayerSperm(ctx: CanvasRenderingContext2D, player: any, x: num
   ctx.lineWidth = 3;
   ctx.font = "bold 12px Arial";
   ctx.textAlign = "center";
-  ctx.strokeText(player.nickname, 0, -30);
-  ctx.fillText(player.nickname, 0, -30);
+  ctx.strokeText(player.nickname, 0, -40 * scale);
+  ctx.fillText(player.nickname, 0, -40 * scale);
   
   ctx.restore();
 }
@@ -470,25 +559,42 @@ function drawPowerUp(ctx: CanvasRenderingContext2D, powerUp: PowerUp, x: number,
   ctx.save();
   ctx.translate(x, y);
   
-  // Glow
-  const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 30);
-  glowGradient.addColorStop(0, "#FFE66D88");
+  // Enhanced glow with pulsing effect
+  const pulse = Math.sin(Date.now() / 300) * 0.2 + 0.8;
+  const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 40 * pulse);
+  glowGradient.addColorStop(0, "#FFE66DAA");
+  glowGradient.addColorStop(0.5, "#FFE66D44");
   glowGradient.addColorStop(1, "#FFE66D00");
   ctx.fillStyle = glowGradient;
-  ctx.fillRect(-30, -30, 60, 60);
+  ctx.fillRect(-40, -40, 80, 80);
   
-  // Icon
-  ctx.font = "30px Arial";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  
-  const icons = {
-    lube: "💧",
-    mutation: "🧬",
-    viagra: "💊",
+  const imageMap = {
+    lube: '/images/lube.png',
+    mutation: '/images/mutation.png',
+    viagra: '/images/viagra.png',
   };
   
-  ctx.fillText(icons[powerUp.type], 0, 0);
+  const labelMap = {
+    lube: 'LUBE BOOST',
+    mutation: 'MUTATION',
+    viagra: 'VIAGRA',
+  };
+  
+  const imageSrc = imageMap[powerUp.type];
+  const img = IMAGE_CACHE[imageSrc];
+  
+  if (img) {
+    const size = 45;
+    ctx.drawImage(img, -size / 2, -size / 2, size, size);
+  }
+  
+  ctx.fillStyle = "#FFF";
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 3;
+  ctx.font = "bold 11px 'Comic Sans MS', cursive";
+  ctx.textAlign = "center";
+  ctx.strokeText(labelMap[powerUp.type], 0, 35);
+  ctx.fillText(labelMap[powerUp.type], 0, 35);
   
   ctx.restore();
 }
@@ -497,28 +603,86 @@ function drawObstacle(ctx: CanvasRenderingContext2D, obstacle: Obstacle, x: numb
   ctx.save();
   ctx.translate(x, y);
   
-  // Icon
-  ctx.font = "35px Arial";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  
-  const icons = {
-    condom: "🚫",
-    pill: "💊",
-    antibody: "🦠",
-    std: "🦠",
+  const imageMap = {
+    condom: '/images/condom.png',
+    pill: '/images/birth-control.png',
+    antibody: '/images/antibody.png',
+    std: '/images/std.png',
   };
   
-  ctx.fillText(icons[obstacle.type], 0, 0);
+  const labelMap = {
+    condom: 'CONDOM',
+    pill: 'BIRTH CONTROL',
+    antibody: 'ANTIBODY',
+    std: 'STD',
+  };
   
-  // Label for condom
-  if (obstacle.type === "condom") {
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(-40, -50, 80, 25);
-    ctx.fillStyle = "#333";
-    ctx.font = "12px 'Comic Sans MS', cursive";
-    ctx.fillText("CONDOM", 0, -37);
+  const imageSrc = imageMap[obstacle.type];
+  const img = IMAGE_CACHE[imageSrc];
+  
+  if (img) {
+    const size = 45;
+    ctx.drawImage(img, -size / 2, -size / 2, size, size);
   }
   
+  if (obstacle.isChasing) {
+    ctx.fillStyle = "#FF0000";
+    ctx.font = "bold 14px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("⚠️", 0, -40);
+  }
+  
+  ctx.fillStyle = "#FFF";
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 3;
+  ctx.font = "bold 10px 'Comic Sans MS', cursive";
+  ctx.textAlign = "center";
+  ctx.strokeText(labelMap[obstacle.type], 0, 35);
+  ctx.fillText(labelMap[obstacle.type], 0, 35);
+  
+  ctx.restore();
+}
+
+function drawMysteryEgg(ctx: CanvasRenderingContext2D, egg: MysteryEgg, x: number, y: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  
+  const pulse = Math.sin(Date.now() / 200) * 0.15 + 0.85;
+  const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 50 * pulse);
+  glowGradient.addColorStop(0, "#FFD700AA");
+  glowGradient.addColorStop(0.5, "#FFD70044");
+  glowGradient.addColorStop(1, "#FFD70000");
+  ctx.fillStyle = glowGradient;
+  ctx.fillRect(-50, -50, 100, 100);
+  
+  const img = IMAGE_CACHE['/images/mystery-egg.png'];
+  if (img) {
+    const size = 50;
+    ctx.drawImage(img, -size / 2, -size / 2, size, size);
+  }
+  
+  ctx.fillStyle = "#FFF";
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 3;
+  ctx.font = "bold 11px 'Comic Sans MS', cursive";
+  ctx.textAlign = "center";
+  ctx.strokeText("MYSTERY!", 0, 40);
+  ctx.fillText("MYSTERY!", 0, 40);
+  
+  ctx.restore();
+}
+
+function drawParticle(ctx: CanvasRenderingContext2D, particle: Particle, x: number, y: number) {
+  ctx.save();
+  
+  const alpha = particle.life / particle.maxLife;
+  ctx.globalAlpha = alpha;
+  
+  ctx.fillStyle = particle.color;
+  ctx.beginPath();
+  ctx.arc(x, y, particle.size, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
