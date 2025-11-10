@@ -28,6 +28,9 @@ export interface MysteryEgg {
   active: boolean;
   contents: "powerup" | "obstacle";
   contentType: string;
+  isOpening?: boolean;
+  openingProgress?: number;
+  openingStartTime?: number;
 }
 
 export interface Particle {
@@ -410,81 +413,102 @@ export const useRace = create<RaceState>((set, get) => ({
   collectMysteryEgg: (racerId, eggId) => {
     const state = get();
     const egg = state.mysteryEggs.find((e) => e.id === eggId);
-    if (!egg || !egg.active) return;
+    if (!egg || !egg.active || egg.isOpening) return;
     
-    // Deactivate egg
+    // Capture opening time for validation
+    const openingStartTime = Date.now();
+    
+    // Start opening animation
     set({
       mysteryEggs: state.mysteryEggs.map((e) =>
-        e.id === eggId ? { ...e, active: false } : e
+        e.id === eggId ? { ...e, isOpening: true, openingStartTime, openingProgress: 0 } : e
       ),
     });
     
     const racer = state.racers.find((r) => r.id === racerId);
     if (!racer) return;
     
-    // Create particle explosion with gold particles
-    get().addParticles(egg.x, egg.y, "#FFD700", 15);
-    
     const playerName = (racer as any).nickname || racer.name;
     let message = "";
     
-    // Apply contents
-    if (egg.contents === "powerup") {
-      let multiplier = 1;
+    // Apply contents after animation completes (800ms)
+    setTimeout(() => {
+      const currentState = get();
+      const currentEgg = currentState.mysteryEggs.find((e) => e.id === eggId);
       
-      switch (egg.contentType) {
-        case "lube":
-          multiplier = 1.5;
-          message = `✨ ${playerName} got Mystery Lube!`;
-          break;
-        case "mutation":
-          multiplier = 1.3;
-          message = `✨ ${playerName} got Mystery Mutation!`;
-          break;
-        case "viagra":
-          multiplier = 1.7;
-          message = `✨ ${playerName} got Mystery Viagra!`;
-          break;
+      // Guard: Only apply effects if egg is still opening and hasn't been reset
+      if (!currentEgg || !currentEgg.isOpening || currentEgg.openingStartTime !== openingStartTime) {
+        return;
       }
       
-      get().updateRacer(racerId, { 
-        speedMultiplier: multiplier,
-        activePowerUpType: egg.contentType,
-        powerUpTimer: 3000,
+      // Create particle explosion with gold particles
+      get().addParticles(currentEgg.x, currentEgg.y, "#FFD700", 20);
+      
+      // Apply contents using current egg data (not stale closure)
+      if (currentEgg.contents === "powerup") {
+        let multiplier = 1;
+        
+        switch (currentEgg.contentType) {
+          case "lube":
+            multiplier = 1.5;
+            message = `✨ ${playerName} got Mystery Lube!`;
+            break;
+          case "mutation":
+            multiplier = 1.3;
+            message = `✨ ${playerName} got Mystery Mutation!`;
+            break;
+          case "viagra":
+            multiplier = 1.7;
+            message = `✨ ${playerName} got Mystery Viagra!`;
+            break;
+        }
+        
+        get().updateRacer(racerId, { 
+          speedMultiplier: multiplier,
+          activePowerUpType: currentEgg.contentType,
+          powerUpTimer: 3000,
+        });
+        get().addActiveEffect({ type: currentEgg.contentType, message, duration: 3000, timer: 3000 });
+      } else {
+        // It's an obstacle
+        let slowdownDuration = 0;
+        
+        switch (currentEgg.contentType) {
+          case "condom":
+            slowdownDuration = 2000;
+            message = `💥 ${playerName} got Mystery Condom!`;
+            break;
+          case "pill":
+            slowdownDuration = 1500;
+            message = `💥 ${playerName} got Mystery Pill!`;
+            break;
+          case "antibody":
+            slowdownDuration = 3000;
+            message = `💥 ${playerName} got Mystery Antibody!`;
+            break;
+          case "std":
+            slowdownDuration = 3000;
+            message = `💥 ${playerName} got Mystery STD!`;
+            break;
+        }
+        
+        get().updateRacer(racerId, { speedMultiplier: 0.5, slowdownTimer: slowdownDuration });
+        get().addActiveEffect({ type: currentEgg.contentType, message, duration: slowdownDuration, timer: slowdownDuration });
+        
+        // Set screen shake for obstacle
+        set({ screenShake: 5 });
+      }
+      
+      // Set event message for commentary
+      get().setEventMessage(message);
+      
+      // Deactivate egg after animation and effects
+      set({
+        mysteryEggs: currentState.mysteryEggs.map((e) =>
+          e.id === eggId ? { ...e, active: false, isOpening: false } : e
+        ),
       });
-      get().addActiveEffect({ type: egg.contentType, message, duration: 3000, timer: 3000 });
-    } else {
-      // It's an obstacle
-      let slowdownDuration = 0;
-      
-      switch (egg.contentType) {
-        case "condom":
-          slowdownDuration = 2000;
-          message = `💥 ${playerName} got Mystery Condom!`;
-          break;
-        case "pill":
-          slowdownDuration = 1500;
-          message = `💥 ${playerName} got Mystery Pill!`;
-          break;
-        case "antibody":
-          slowdownDuration = 3000;
-          message = `💥 ${playerName} got Mystery Antibody!`;
-          break;
-        case "std":
-          slowdownDuration = 3000;
-          message = `💥 ${playerName} got Mystery STD!`;
-          break;
-      }
-      
-      get().updateRacer(racerId, { speedMultiplier: 0.5, slowdownTimer: slowdownDuration });
-      get().addActiveEffect({ type: egg.contentType, message, duration: slowdownDuration, timer: slowdownDuration });
-      
-      // Set screen shake for obstacle
-      set({ screenShake: 5 });
-    }
-    
-    // Set event message for commentary
-    get().setEventMessage(message);
+    }, 800);
   },
   
   updateCamera: (y) => set({ cameraY: y }),

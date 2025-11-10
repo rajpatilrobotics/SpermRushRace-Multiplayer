@@ -92,6 +92,8 @@ export function GameCanvas() {
       '/images/condom.png',
       '/images/antibody.png',
       '/images/mystery-egg.png',
+      '/images/mystery-egg-cracking.png',
+      '/images/mystery-egg-opened.png',
     ];
     
     Promise.all(images.map(loadImage)).then(() => {
@@ -451,9 +453,65 @@ function drawSperm(ctx: CanvasRenderingContext2D, racer: Racer, x: number, y: nu
   ctx.fillStyle = headGradient;
   ctx.fill();
   
+  // Add eyes for personality
+  const eyeY = -8 * scale;
+  const eyeSpacing = 5 * scale;
+  const eyeSize = 3.5 * scale;
+  
+  // Left eye
+  ctx.fillStyle = "#FFFFFF";
+  ctx.beginPath();
+  ctx.arc(-eyeSpacing, eyeY, eyeSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Right eye
+  ctx.beginPath();
+  ctx.arc(eyeSpacing, eyeY, eyeSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Pupils (slightly offset to give determined look)
+  const pupilSize = 1.8 * scale;
+  const pupilOffsetX = 0.5 * scale;
+  const pupilOffsetY = -0.3 * scale;
+  
+  ctx.fillStyle = "#000000";
+  ctx.beginPath();
+  ctx.arc(-eyeSpacing + pupilOffsetX, eyeY + pupilOffsetY, pupilSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.beginPath();
+  ctx.arc(eyeSpacing + pupilOffsetX, eyeY + pupilOffsetY, pupilSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Eye shine/sparkle for extra life
+  ctx.fillStyle = "#FFFFFF";
+  const shineSize = 0.8 * scale;
+  ctx.beginPath();
+  ctx.arc(-eyeSpacing - 0.8 * scale, eyeY - 0.8 * scale, shineSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.beginPath();
+  ctx.arc(eyeSpacing - 0.8 * scale, eyeY - 0.8 * scale, shineSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Determined mouth/smile
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = 1.5 * scale;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(0, 0, 4 * scale, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+  
   // Inner glow effect
   ctx.strokeStyle = racer.color + "AA";
   ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  ctx.moveTo(0, -23 * scale);
+  ctx.quadraticCurveTo(10 * scale, -13 * scale, 13 * scale, 0);
+  ctx.quadraticCurveTo(10 * scale, 10 * scale, 0, 13 * scale);
+  ctx.quadraticCurveTo(-10 * scale, 10 * scale, -13 * scale, 0);
+  ctx.quadraticCurveTo(-10 * scale, -13 * scale, 0, -23 * scale);
+  ctx.closePath();
   ctx.stroke();
   
   // Mid glow effect around head
@@ -528,9 +586,65 @@ function drawMultiplayerSperm(ctx: CanvasRenderingContext2D, player: any, x: num
   ctx.fillStyle = headGradient;
   ctx.fill();
   
+  // Add eyes for personality
+  const eyeY = -8 * scale;
+  const eyeSpacing = 5 * scale;
+  const eyeSize = 3.5 * scale;
+  
+  // Left eye
+  ctx.fillStyle = "#FFFFFF";
+  ctx.beginPath();
+  ctx.arc(-eyeSpacing, eyeY, eyeSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Right eye
+  ctx.beginPath();
+  ctx.arc(eyeSpacing, eyeY, eyeSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Pupils (slightly offset to give determined look)
+  const pupilSize = 1.8 * scale;
+  const pupilOffsetX = 0.5 * scale;
+  const pupilOffsetY = -0.3 * scale;
+  
+  ctx.fillStyle = "#000000";
+  ctx.beginPath();
+  ctx.arc(-eyeSpacing + pupilOffsetX, eyeY + pupilOffsetY, pupilSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.beginPath();
+  ctx.arc(eyeSpacing + pupilOffsetX, eyeY + pupilOffsetY, pupilSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Eye shine/sparkle for extra life
+  ctx.fillStyle = "#FFFFFF";
+  const shineSize = 0.8 * scale;
+  ctx.beginPath();
+  ctx.arc(-eyeSpacing - 0.8 * scale, eyeY - 0.8 * scale, shineSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.beginPath();
+  ctx.arc(eyeSpacing - 0.8 * scale, eyeY - 0.8 * scale, shineSize, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Determined mouth/smile
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = 1.5 * scale;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(0, 0, 4 * scale, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+  
   // Inner glow effect
   ctx.strokeStyle = player.color + "AA";
   ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  ctx.moveTo(0, -23 * scale);
+  ctx.quadraticCurveTo(10 * scale, -13 * scale, 13 * scale, 0);
+  ctx.quadraticCurveTo(10 * scale, 10 * scale, 0, 13 * scale);
+  ctx.quadraticCurveTo(-10 * scale, 10 * scale, -13 * scale, 0);
+  ctx.quadraticCurveTo(-10 * scale, -13 * scale, 0, -23 * scale);
+  ctx.closePath();
   ctx.stroke();
   
   // Mid glow effect around head
@@ -584,7 +698,7 @@ function drawPowerUp(ctx: CanvasRenderingContext2D, powerUp: PowerUp, x: number,
   const img = IMAGE_CACHE[imageSrc];
   
   if (img) {
-    const size = 45;
+    const size = 70;
     ctx.drawImage(img, -size / 2, -size / 2, size, size);
   }
   
@@ -621,7 +735,7 @@ function drawObstacle(ctx: CanvasRenderingContext2D, obstacle: Obstacle, x: numb
   const img = IMAGE_CACHE[imageSrc];
   
   if (img) {
-    const size = 45;
+    const size = 70;
     ctx.drawImage(img, -size / 2, -size / 2, size, size);
   }
   
@@ -655,19 +769,35 @@ function drawMysteryEgg(ctx: CanvasRenderingContext2D, egg: MysteryEgg, x: numbe
   ctx.fillStyle = glowGradient;
   ctx.fillRect(-50, -50, 100, 100);
   
-  const img = IMAGE_CACHE['/images/mystery-egg.png'];
+  // Determine which image to show based on opening state
+  let imageSrc = '/images/mystery-egg.png';
+  if (egg.isOpening && egg.openingStartTime) {
+    const elapsed = Date.now() - egg.openingStartTime;
+    const progress = Math.min(elapsed / 800, 1);
+    
+    if (progress < 0.5) {
+      imageSrc = '/images/mystery-egg-cracking.png';
+    } else {
+      imageSrc = '/images/mystery-egg-opened.png';
+    }
+  }
+  
+  const img = IMAGE_CACHE[imageSrc];
   if (img) {
-    const size = 50;
+    const size = 75;
     ctx.drawImage(img, -size / 2, -size / 2, size, size);
   }
   
-  ctx.fillStyle = "#FFF";
-  ctx.strokeStyle = "#000";
-  ctx.lineWidth = 3;
-  ctx.font = "bold 11px 'Comic Sans MS', cursive";
-  ctx.textAlign = "center";
-  ctx.strokeText("MYSTERY!", 0, 40);
-  ctx.fillText("MYSTERY!", 0, 40);
+  // Only show MYSTERY! label if not opening
+  if (!egg.isOpening) {
+    ctx.fillStyle = "#FFF";
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 3;
+    ctx.font = "bold 11px 'Comic Sans MS', cursive";
+    ctx.textAlign = "center";
+    ctx.strokeText("MYSTERY!", 0, 40);
+    ctx.fillText("MYSTERY!", 0, 40);
+  }
   
   ctx.restore();
 }
