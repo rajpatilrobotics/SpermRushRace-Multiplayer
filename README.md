@@ -48,7 +48,7 @@ A hilarious multiplayer racing game where you control sperm characters swimming 
 
 ## 🎯 Demo
 
-**Live Demo:** Deploy this project on Replit and share your live URL here!
+**Live Demo:** Deployed on Render - [Add your Render URL here]
 
 ### Game Preview
 
@@ -278,13 +278,21 @@ npm run check
 
 ## 🌐 Deployment
 
-### Deploy to Replit
+### Deployed on Render
 
-This project is optimized for Replit deployment:
+This project is deployed on Render.com for production hosting.
 
-1. **Fork/Import** this repository to Replit
-2. **Run** - Replit will auto-detect and install dependencies
-3. **Publish** - Use Replit's deployment features
+**To deploy your own instance on Render:**
+
+1. **Connect Repository** - Link your GitHub repository to Render
+2. **Configure Build Settings:**
+   - Build Command: `npm run build`
+   - Start Command: `npm run start`
+3. **Set Environment Variables:**
+   - `NODE_ENV=production`
+   - `PORT=5000` (or use Render's default PORT)
+   - `DATABASE_URL` (if using database features)
+4. **Deploy** - Render will automatically build and deploy your app
 
 ### Deploy to Other Platforms
 
@@ -311,10 +319,14 @@ npm run start
 
 ### Platform-Specific Guides
 
+- **Render** (Current deployment): 
+  - Build Command: `npm run build`
+  - Start Command: `npm run start`
+  - Auto-deploys on git push
+  - Supports WebSocket connections for multiplayer
 - **Vercel**: Deploy client separately, use serverless functions
 - **Heroku**: Use `Procfile` with `npm run start`
 - **Railway**: Auto-detects Node.js, deploy directly
-- **Render**: Use build command `npm run build`, start with `npm run start`
 
 ---
 
